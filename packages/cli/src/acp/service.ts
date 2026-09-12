@@ -440,7 +440,7 @@ async function loadCatalog(client: OpenCodeClient, cwd: string): Promise<Catalog
         modes: agents.map((agent) => ({ id: agent.id, name: agent.name, description: agent.description })),
         defaultModeID: defaultAgent.id,
         commands: commandResult.data,
-        skills: skillResult.data.filter((skill) => skill.slash !== false),
+        skills: skillResult.data.filter((skill) => skill.slash === true),
       }
     }
     missing = defaultModel ? "No primary agents are available" : "No models are available"

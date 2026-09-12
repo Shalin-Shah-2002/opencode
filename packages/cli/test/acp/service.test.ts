@@ -24,7 +24,7 @@ describe("acp service", () => {
         if (url.pathname === "/api/agent") return Response.json({ location, data: [agent] })
         if (url.pathname === "/api/command")
           return Response.json({ location, data: [{ name: "review", template: "" }] })
-        if (url.pathname === "/api/skill") return Response.json({ location, data: [skill] })
+        if (url.pathname === "/api/skill") return Response.json({ location, data: [skill, unmarkedSkill] })
         if (url.pathname === "/api/session" && request.method === "POST") return Response.json({ data: session })
         if (url.pathname === "/api/mcp/docs" && request.method === "PUT") return new Response(null, { status: 204 })
         return new Response(null, { status: 404 })
@@ -103,6 +103,14 @@ const skill = {
   slash: true,
   location: "/skills/verify.md",
   content: "verify",
+}
+
+const unmarkedSkill = {
+  id: "unmarked",
+  name: "unmarked",
+  description: "Not a slash command",
+  location: "/skills/unmarked.md",
+  content: "unmarked",
 }
 
 const session = {

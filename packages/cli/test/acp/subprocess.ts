@@ -59,6 +59,8 @@ export type AcpProcess = {
 export const verifierSkill = `---
 name: verifier-skill
 description: Verifier compatibility skill.
+metadata:
+  opencode/slash: "true"
 ---
 
 # Verifier Skill

@@ -100,7 +100,7 @@ export async function loadRunCommands(
     sdk.command.list(location(ref), ...requestOptions(signal)),
     sdk.skill.list(location(ref), ...requestOptions(signal)),
   ])
-  return [...commands.data.map(runCommand), ...skills.data.filter((skill) => skill.slash !== false).map(runSkill)]
+  return [...commands.data.map(runCommand), ...skills.data.filter((skill) => skill.slash === true).map(runSkill)]
 }
 
 export async function loadRunReferences(
