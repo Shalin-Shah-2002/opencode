@@ -123,6 +123,7 @@ export type SessionDomain = Pick<
   | "rename"
   | "move"
   | "wait"
+  | "revert"
   | "context"
 > & {
   readonly hook: ModelHooks<SessionHooks>

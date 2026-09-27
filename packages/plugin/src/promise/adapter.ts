@@ -583,6 +583,11 @@ export function fromPromise(plugin: Plugin) {
             rename: adaptApiMethod(SessionEndpoints["session.rename"], host.session.rename),
             move: adaptApiMethod(SessionEndpoints["session.move"], host.session.move),
             wait: adaptApiMethod(SessionEndpoints["session.wait"], host.session.wait),
+            revert: {
+              stage: adaptApiMethod(SessionEndpoints["session.revert.stage"], host.session.revert.stage),
+              clear: adaptApiMethod(SessionEndpoints["session.revert.clear"], host.session.revert.clear),
+              commit: adaptApiMethod(SessionEndpoints["session.revert.commit"], host.session.revert.commit),
+            },
             context: adaptApiMethod(SessionEndpoints["session.context"], host.session.context),
           },
           shell: {
