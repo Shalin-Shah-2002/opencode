@@ -47,6 +47,51 @@ describe("toLLMMessages", () => {
     expect(messages.map((message) => message.id)).toEqual([id("text"), id("reasoning")])
   })
 
+  describe("attachments rejected by the provider", () => {
+    const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
+    const history = (error: string, modelID = "model") => [
+      SessionMessage.User.make({ id: id("image"), type: "user", text: "Look", files: [file], time: { created } }),
+      SessionMessage.Assistant.make({
+        id: id("failed"),
+        type: "assistant",
+        agent: "build",
+        model: { id: ModelV2.ID.make(modelID), providerID: ProviderV2.ID.make("provider") },
+        content: [],
+        error: { type: "unknown", message: error },
+        time: { created, completed: created },
+      }),
+      SessionMessage.User.make({ id: id("next"), type: "user", text: "Hello?", time: { created } }),
+    ]
+    const imageContent = (messages: ReturnType<typeof toLLMMessages>) =>
+      messages.find((message) => message.id === id("image"))?.content
+
+    test("replaces attachments whose request the same model rejected", () => {
+      expect(
+        imageContent(
+          toLLMMessages(history("Provider request failed with HTTP 400: Image input is not supported"), model),
+        ),
+      ).toEqual([
+        { type: "text", text: "Look" },
+        {
+          type: "text",
+          text: '[Attachment "hello.png" (image/png) omitted: the provider rejected the request that included it.]',
+        },
+      ])
+    })
+
+    test("keeps attachments for a different model", () => {
+      expect(
+        imageContent(toLLMMessages(history("Provider request failed with HTTP 400", "other-model"), model)),
+      ).toContainEqual(expect.objectContaining({ type: "media", mediaType: "image/png" }))
+    })
+
+    test("keeps attachments when the failure was not a request rejection", () => {
+      expect(imageContent(toLLMMessages(history("Provider request failed with HTTP 503"), model))).toContainEqual(
+        expect.objectContaining({ type: "media", mediaType: "image/png" }),
+      )
+    })
+  })
+
   test("maps every top-level V2 Session message type", () => {
     const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
     const messages = toLLMMessages(

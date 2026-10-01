@@ -112,7 +112,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   ]
 }
 
-function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] {
+function toLLMMessage(message: SessionMessage.Message, model: Model, rejected: ReadonlySet<string>): Message[] {
   switch (message.type) {
     case "agent-switched":
     case "model-switched":
@@ -122,7 +122,10 @@ function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] 
         Message.make({
           id: message.id,
           role: "user",
-          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map(media)],
+          content: [
+            { type: "text", text: message.text },
+            ...(message.files ?? []).map((file) => (rejected.has(message.id) ? omittedMedia(file) : media(file))),
+          ],
           metadata: {
             ...message.metadata,
             ...(message.agents?.length ? { agents: message.agents } : {}),
@@ -167,5 +170,29 @@ ${message.recent}
 }
 
 /** Translate projected V2 Session history into canonical @opencode-ai/llm context. */
-export const toLLMMessages = (messages: readonly SessionMessage.Message[], model: Model) =>
-  messages.flatMap((message) => toLLMMessage(message, model))
+export const toLLMMessages = (messages: readonly SessionMessage.Message[], model: Model) => {
+  const rejected = rejectedAttachments(messages, model)
+  return messages.flatMap((message) => toLLMMessage(message, model, rejected))
+}
+
+const omittedMedia = (file: FileAttachment): ContentPart => ({
+  type: "text",
+  text: `[Attachment ${file.name ? `"${file.name}" ` : ""}(${file.mime}) omitted: the provider rejected the request that included it.]`,
+})
+
+// Replaying an attachment the provider already rejected fails every later turn the same way,
+// so strip attachments whose turn failed with a request error before producing any output.
+// Only the same model is affected, so switching to a model that accepts the attachment restores it.
+const rejectedAttachments = (messages: readonly SessionMessage.Message[], model: Model) =>
+  new Set(
+    messages.flatMap((message, index) => {
+      if (message.type !== "user" || !message.files?.length) return []
+      const reply = messages.slice(index + 1).find((next) => next.type === "user" || next.type === "assistant")
+      if (reply?.type !== "assistant" || reply.error === undefined || reply.content.length > 0) return []
+      if (String(reply.model.providerID) !== String(model.provider) || String(reply.model.id) !== String(model.id))
+        return []
+      return REQUEST_REJECTED.test(reply.error.message) ? [message.id] : []
+    }),
+  )
+
+const REQUEST_REJECTED = /HTTP (400|413|415|422)\b/
