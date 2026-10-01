@@ -92,6 +92,46 @@ describe("toLLMMessages", () => {
     })
   })
 
+  describe("declared input modalities", () => {
+    const image = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "a.png" })
+    const text = FileAttachment.make({ uri: "data:text/plain;base64,aGVsbG8=", mime: "text/plain", name: "a.txt" })
+    const content = (input?: ReadonlyArray<string>) =>
+      toLLMMessages(
+        [
+          SessionMessage.User.make({
+            id: id("user"),
+            type: "user",
+            text: "Look",
+            files: [image, text],
+            time: { created },
+          }),
+        ],
+        model,
+        input,
+      )[0]?.content
+
+    test("replaces attachments whose modality the model does not support", () => {
+      expect(content(["text"])).toEqual([
+        { type: "text", text: "Look" },
+        {
+          type: "text",
+          text: 'ERROR: Cannot read "a.png" (this model does not support image input). Inform the user.',
+        },
+        expect.objectContaining({ type: "media", mediaType: "text/plain" }),
+      ])
+    })
+
+    test("sends attachments the model supports", () => {
+      expect(content(["text", "image"])).toContainEqual(
+        expect.objectContaining({ type: "media", mediaType: "image/png" }),
+      )
+    })
+
+    test("sends attachments when the model's modalities are unknown", () => {
+      expect(content()).toContainEqual(expect.objectContaining({ type: "media", mediaType: "image/png" }))
+    })
+  })
+
   test("maps every top-level V2 Session message type", () => {
     const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
     const messages = toLLMMessages(

@@ -28,7 +28,7 @@ import { ContextSnapshotDecodeError } from "@opencode-ai/core/session/error"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionInput } from "@opencode-ai/core/session/input"
 import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Prompt } from "@opencode-ai/core/session/prompt"
+import { FileAttachment, Prompt } from "@opencode-ai/core/session/prompt"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionRunCoordinator } from "@opencode-ai/core/session/run-coordinator"
@@ -154,8 +154,11 @@ const echo = Layer.effectDiscard(
 const echoNode = makeLocationNode({ name: "test/session-runner-tools", layer: echo, deps: [ToolRegistry.node] })
 let modelResolveHook = Effect.void
 let currentModel = model
+let currentInput: ReadonlyArray<string> = []
 const models = SessionRunnerModel.layerWith((session) =>
-  modelResolveHook.pipe(Effect.as(session.model?.id === "replacement" ? replacementModel : currentModel)),
+  modelResolveHook.pipe(
+    Effect.as({ model: session.model?.id === "replacement" ? replacementModel : currentModel, input: currentInput }),
+  ),
 )
 const systemContextKey = SystemContext.Key.make("test/context")
 let systemBaseline = "Initial context"
@@ -318,6 +321,7 @@ const setup = Effect.gen(function* () {
   systemLoadHook = Effect.void
   modelResolveHook = Effect.void
   currentModel = model
+  currentInput = []
   skillBaselines.clear()
   responses = undefined
   streamFailure = undefined
@@ -652,6 +656,34 @@ describe("SessionRunnerLLM", () => {
         { role: "user", content: [{ type: "text", text: "Second" }] },
       ])
       expect(yield* session.messages({ sessionID })).toHaveLength(2)
+    }),
+  )
+
+  it.effect("replaces attachments the model does not declare as supported input", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      currentInput = ["text"]
+      requests.length = 0
+      response = []
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({
+          text: "Look",
+          files: [FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "a.png" })],
+        }),
+      })
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.messages.map((message) => message.content)).toEqual([
+        [
+          { type: "text", text: "Look" },
+          {
+            type: "text",
+            text: 'ERROR: Cannot read "a.png" (this model does not support image input). Inform the user.',
+          },
+        ],
+      ])
     }),
   )
 
