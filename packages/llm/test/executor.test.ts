@@ -113,6 +113,34 @@ describe("RequestExecutor", () => {
     }).pipe(Effect.provide(responsesLayer([new Response("invalid parameter", { status: 400 })]))),
   )
 
+  it.effect("surfaces the provider error message from long JSON error bodies", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason).toMatchObject({ _tag: "InvalidRequest" })
+      expect(error.message).toContain(
+        "Provider request failed with HTTP 400: Image input is not supported for this model",
+      )
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "Image input is not supported for this model",
+                type: "invalid_request_error",
+                trace: "x".repeat(600),
+              },
+            }),
+            { status: 400 },
+          ),
+        ]),
+      ),
+    ),
+  )
+
   it.effect("returns redacted diagnostics for retryable rate limits", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
