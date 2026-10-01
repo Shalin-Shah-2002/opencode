@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Layer, Random } from "effect"
+import { Cause, Context, Effect, Layer, Option, Random, Schema } from "effect"
 import {
   FetchHttpClient,
   Headers,
@@ -203,7 +203,27 @@ const responseBody = (body: string | void, request: HttpClientRequest.HttpClient
 
 const providerMessage = (status: number, body: { readonly body?: string }) => {
   if (body.body && body.body.length <= 500) return `Provider request failed with HTTP ${status}: ${body.body}`
+  const detail = body.body ? providerErrorDetail(body.body) : undefined
+  if (detail) return `Provider request failed with HTTP ${status}: ${detail}`
   return `Provider request failed with HTTP ${status}`
+}
+
+const decodeJsonBody = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+
+// Long provider error bodies are not inlined, but most providers put a short
+// human-readable reason under `error.message`, `message`, or `detail`.
+const providerErrorDetail = (body: string) => {
+  const json = Option.getOrUndefined(decodeJsonBody(body))
+  if (typeof json !== "object" || json === null) return
+  const error = "error" in json ? json.error : undefined
+  const candidate = [
+    typeof error === "object" && error !== null && "message" in error ? error.message : undefined,
+    typeof error === "string" ? error : undefined,
+    "message" in json ? json.message : undefined,
+    "detail" in json ? json.detail : undefined,
+  ].find((value) => typeof value === "string" && value.trim().length > 0)
+  if (typeof candidate !== "string") return
+  return candidate.length <= 500 ? candidate : `${candidate.slice(0, 500)}…`
 }
 
 const responseHttp = (input: {
