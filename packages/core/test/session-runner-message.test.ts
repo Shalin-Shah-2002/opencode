@@ -47,6 +47,91 @@ describe("toLLMMessages", () => {
     expect(messages.map((message) => message.id)).toEqual([id("text"), id("reasoning")])
   })
 
+  describe("attachments rejected by the provider", () => {
+    const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
+    const history = (error: string, modelID = "model") => [
+      SessionMessage.User.make({ id: id("image"), type: "user", text: "Look", files: [file], time: { created } }),
+      SessionMessage.Assistant.make({
+        id: id("failed"),
+        type: "assistant",
+        agent: "build",
+        model: { id: ModelV2.ID.make(modelID), providerID: ProviderV2.ID.make("provider") },
+        content: [],
+        error: { type: "unknown", message: error },
+        time: { created, completed: created },
+      }),
+      SessionMessage.User.make({ id: id("next"), type: "user", text: "Hello?", time: { created } }),
+    ]
+    const imageContent = (messages: ReturnType<typeof toLLMMessages>) =>
+      messages.find((message) => message.id === id("image"))?.content
+
+    test("replaces attachments whose request the same model rejected", () => {
+      expect(
+        imageContent(
+          toLLMMessages(history("Provider request failed with HTTP 400: Image input is not supported"), model),
+        ),
+      ).toEqual([
+        { type: "text", text: "Look" },
+        {
+          type: "text",
+          text: '[Attachment "hello.png" (image/png) omitted: the provider rejected the request that included it.]',
+        },
+      ])
+    })
+
+    test("keeps attachments for a different model", () => {
+      expect(
+        imageContent(toLLMMessages(history("Provider request failed with HTTP 400", "other-model"), model)),
+      ).toContainEqual(expect.objectContaining({ type: "media", mediaType: "image/png" }))
+    })
+
+    test("keeps attachments when the failure was not a request rejection", () => {
+      expect(imageContent(toLLMMessages(history("Provider request failed with HTTP 503"), model))).toContainEqual(
+        expect.objectContaining({ type: "media", mediaType: "image/png" }),
+      )
+    })
+  })
+
+  describe("declared input modalities", () => {
+    const image = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "a.png" })
+    const text = FileAttachment.make({ uri: "data:text/plain;base64,aGVsbG8=", mime: "text/plain", name: "a.txt" })
+    const content = (input?: ReadonlyArray<string>) =>
+      toLLMMessages(
+        [
+          SessionMessage.User.make({
+            id: id("user"),
+            type: "user",
+            text: "Look",
+            files: [image, text],
+            time: { created },
+          }),
+        ],
+        model,
+        input,
+      )[0]?.content
+
+    test("replaces attachments whose modality the model does not support", () => {
+      expect(content(["text"])).toEqual([
+        { type: "text", text: "Look" },
+        {
+          type: "text",
+          text: 'ERROR: Cannot read "a.png" (this model does not support image input). Inform the user.',
+        },
+        expect.objectContaining({ type: "media", mediaType: "text/plain" }),
+      ])
+    })
+
+    test("sends attachments the model supports", () => {
+      expect(content(["text", "image"])).toContainEqual(
+        expect.objectContaining({ type: "media", mediaType: "image/png" }),
+      )
+    })
+
+    test("sends attachments when the model's modalities are unknown", () => {
+      expect(content()).toContainEqual(expect.objectContaining({ type: "media", mediaType: "image/png" }))
+    })
+  })
+
   test("maps every top-level V2 Session message type", () => {
     const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
     const messages = toLLMMessages(
